@@ -73,6 +73,11 @@ contract ReserveManager is Ownable, ReentrancyGuard {
     address public manualBurner;
 
     /**
+     * @notice return if a cToken market is native token or not.
+     */
+    mapping(address => bool) public isNativeMarket;
+
+    /**
      * @notice Emitted when reserves are dispatched
      */
     event Dispatch(
@@ -130,6 +135,14 @@ contract ReserveManager is Ownable, ReentrancyGuard {
     event ManualBurnerUpdated(
         address oldManualBurner,
         address newManualBurner
+    );
+
+    /**
+     * @notice Emitted when a native market is updated
+     */
+    event NativeMarketUpdated(
+        address cToken,
+        bool isNative
     );
 
     constructor(
@@ -258,17 +271,19 @@ contract ReserveManager is Ownable, ReentrancyGuard {
         emit RatioUpdated(oldRatio, newRatio);
     }
 
-    /* Internal functions */
-
     /**
-     * @notice Compare whether the two strings are the same
-     * @param a The first string
-     * @param b The second string
-     * @return Two strings are the same or not
+     * @notice Seize the accidentally deposited tokens
+     * @param cToken The cToken address
+     * @param isNative It's native or not
      */
-    function compareStrings(string memory a, string memory b) internal pure returns (bool) {
-        return (keccak256(abi.encodePacked((a))) == keccak256(abi.encodePacked((b))));
+    function setNativeMarket(address cToken, bool isNative) external onlyOwner {
+        if (isNativeMarket[cToken] != isNative) {
+            isNativeMarket[cToken] = isNative;
+            emit NativeMarketUpdated(cToken, isNative);
+        }
     }
+
+    /* Internal functions */
 
     /**
      * @notice Execute reduce reserve for cToken
@@ -293,7 +308,7 @@ contract ReserveManager is Ownable, ReentrancyGuard {
 
             // Get the cToken underlying.
             address underlying;
-            if (compareStrings(ICToken(cToken).symbol(), "crETH")) {
+            if (isNativeMarket[cToken]) {
                 IWeth(wethAddress).deposit{value: reduceAmount}();
                 underlying = wethAddress;
             } else {

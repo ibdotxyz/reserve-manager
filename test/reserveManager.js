@@ -171,6 +171,17 @@ describe('ReserveManager', () => {
     });
   });
 
+  describe('setNativeMarket', async () => {
+    it('sets native market successfully', async () => {
+      await reserveManager.connect(owner).setNativeMarket(cEth.address, true);
+      expect(await reserveManager.isNativeMarket(cEth.address)).to.eq(true);
+    });
+
+    it('failed to set native market for non-owner', async () => {
+      await expect(reserveManager.setNativeMarket(cEth.address, true)).to.be.revertedWith('Ownable: caller is not the owner');
+    });
+  });
+
   describe('dispatchMultiple', async () => {
     const initTimestamp = 10000;
     const initReserves = toWei('1');
@@ -183,6 +194,7 @@ describe('ReserveManager', () => {
         cEth.setTotalReserves(initReserves),
         reserveManager.connect(owner).setBurners([cToken.address, cEth.address], [burner.address, burner.address]),
         reserveManager.setBlockTimestamp(initTimestamp),
+        reserveManager.connect(owner).setNativeMarket(cEth.address, true),
         root.sendTransaction({
           to: cTokenAdmin.address,
           value: toWei('100'),
