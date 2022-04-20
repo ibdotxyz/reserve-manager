@@ -7,11 +7,11 @@ module.exports = async({
     getUnnamedAccounts,
 }) => {
   const {deploy} = deployments;
-  const {comptroller, deployer, multisig, usdcBurner, wrappedNative} = await getNamedAccounts();
+  const {comptroller, deployer, multisig, wrappedNative, usdc} = await getNamedAccounts();
 
   await deploy('ReserveManager', {
     from: deployer,
-    args: [multisig, comptroller, usdcBurner, wrappedNative, usdc],
+    args: [multisig, multisig, comptroller, wrappedNative, usdc],
     log: true
   });
 }
