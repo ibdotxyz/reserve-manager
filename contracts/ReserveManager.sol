@@ -78,6 +78,11 @@ contract ReserveManager is Ownable, ReentrancyGuard {
     mapping(address => bool) public isNativeMarket;
 
     /**
+     * @notice a dispatcher that could dispatch reserves.
+     */
+    address public dispatcher;
+
+    /**
      * @notice Emitted when reserves are dispatched
      */
     event Dispatch(
@@ -145,6 +150,11 @@ contract ReserveManager is Ownable, ReentrancyGuard {
         bool isNative
     );
 
+    /**
+     * @notice Emitted when a dispatcher is set
+     */
+    event DispatcherSet(address dispatcher);
+
     constructor(
         address _owner,
         address _manualBurner,
@@ -170,19 +180,21 @@ contract ReserveManager is Ownable, ReentrancyGuard {
         return block.timestamp;
     }
 
+    receive() external payable {}
+
+    /* Mutative functions */
+
     /**
      * @notice Execute reduce reserve and burn on multiple cTokens
      * @param cTokens The token address list
      */
     function dispatchMultiple(address[] memory cTokens) external nonReentrant {
+        require(msg.sender == owner() || msg.sender == dispatcher, "unauthorized");
+
         for (uint i = 0; i < cTokens.length; i++) {
             dispatch(cTokens[i]);
         }
     }
-
-    receive() external payable {}
-
-    /* Admin functions */
 
     /**
      * @notice Seize the accidentally deposited tokens
@@ -283,6 +295,16 @@ contract ReserveManager is Ownable, ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Set the new dispatcher
+     * @param newDispatcher The new dispatcher
+     */
+    function setDispatcher(address newDispatcher) external onlyOwner {
+        dispatcher = newDispatcher;
+
+        emit DispatcherSet(newDispatcher);
+    }
+
     /* Internal functions */
 
     /**
@@ -328,7 +350,7 @@ contract ReserveManager is Ownable, ReentrancyGuard {
                 // Allow the corresponding burner to pull the assets to burn.
                 require(burner != address(0), "burner not set");
                 IERC20(underlying).safeIncreaseAllowance(burner, burnAmount);
-                require(IBurner(burner).burn(underlying), "Burner failed to burn the underlying token");
+                IBurner(burner).burn(underlying);
             }
 
             emit Dispatch(underlying, burnAmount, burner);

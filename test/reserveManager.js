@@ -10,9 +10,9 @@ describe('ReserveManager', () => {
   let owner, ownerAddress;
   let manualBurner, manualBurnerAddress;
   let user, userAddress;
+  let dispatcher, dispatcherAddress;
 
   let burner;
-  let newBurner;
   let comptroller;
   let reserveManager;
   let underlying;
@@ -33,6 +33,8 @@ describe('ReserveManager', () => {
     manualBurnerAddress = await manualBurner.getAddress();
     user = accounts[3];
     userAddress = await user.getAddress();
+    dispatcher = accounts[4];
+    dispatcherAddress = await dispatcher.getAddress();
 
     const burnerFactory = await ethers.getContractFactory("MockBurner");
     const comptrollerFactory = await ethers.getContractFactory("MockComptroller");
@@ -44,7 +46,6 @@ describe('ReserveManager', () => {
     const wEthFactory = await ethers.getContractFactory("WETH");
 
     burner = await burnerFactory.deploy();
-    newBurner = await burnerFactory.deploy();
     comptroller = await comptrollerFactory.deploy();
     weth = await wEthFactory.deploy();
     usdc = await tokenFactory.deploy();
@@ -182,6 +183,17 @@ describe('ReserveManager', () => {
     });
   });
 
+  describe('setDispatcher', async () => {
+    it('sets dispatcher successfully', async () => {
+      await reserveManager.connect(owner).setDispatcher(dispatcherAddress);
+      expect(await reserveManager.dispatcher()).to.eq(dispatcherAddress);
+    });
+
+    it('failed to set dispatcher for non-owner', async () => {
+      await expect(reserveManager.setDispatcher(dispatcherAddress)).to.be.revertedWith('Ownable: caller is not the owner');
+    });
+  });
+
   describe('dispatchMultiple', async () => {
     const initTimestamp = 10000;
     const initReserves = toWei('1');
@@ -204,7 +216,7 @@ describe('ReserveManager', () => {
 
     it('dispatches successfully', async () => {
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cToken.address, cEth.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address, cEth.address]);
       const cTokenSnapshot1 = await reserveManager.reservesSnapshot(cToken.address);
       const cEthSnapshot1 = await reserveManager.reservesSnapshot(cEth.address);
       expect(cTokenSnapshot1.timestamp).to.eq(initTimestamp);
@@ -223,7 +235,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch!
-      await reserveManager.dispatchMultiple([cToken.address, cEth.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address, cEth.address]);
       const cTokenSnapshot2 = await reserveManager.reservesSnapshot(cToken.address);
       const cEthSnapshot2 = await reserveManager.reservesSnapshot(cEth.address);
       const cTokenReserves = await cToken.totalReserves();
@@ -246,7 +258,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch again!
-      await reserveManager.dispatchMultiple([cToken.address, cEth.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address, cEth.address]);
       const cTokenSnapshot3 = await reserveManager.reservesSnapshot(cToken.address);
       const cEthSnapshot3 = await reserveManager.reservesSnapshot(cEth.address);
       const cTokenReserves2 = await cToken.totalReserves();
@@ -261,9 +273,11 @@ describe('ReserveManager', () => {
       expect(await weth.balanceOf(burner.address)).to.eq(toWei('1'));
     });
 
-    it('resets the snapshot successfully', async () => {
+    it('dispatches by dispatcher', async () => {
+      await reserveManager.connect(owner).setDispatcher(dispatcherAddress);
+
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(dispatcher).dispatchMultiple([cToken.address, cEth.address]);
 
       const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
       const reserves = toWei('2'); // 1 -> 2
@@ -273,7 +287,22 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch!
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(dispatcher).dispatchMultiple([cToken.address]);
+    });
+
+    it('resets the snapshot successfully', async () => {
+      // Initialize the snapshot.
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
+
+      const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
+      const reserves = toWei('2'); // 1 -> 2
+      await Promise.all([
+        reserveManager.setBlockTimestamp(timestamp),
+        cToken.setTotalReserves(reserves)
+      ]);
+
+      // Dispatch!
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
 
       // Simulate that we reduce some reserves. No need to wait for cool down.
       const timestamp2 = 100001; // only 1 second later
@@ -284,7 +313,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Update the reserves snapshot.
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
       const cTokenSnapshot1 = await reserveManager.reservesSnapshot(cToken.address);
       expect(cTokenSnapshot1.timestamp).to.eq(timestamp2);
       expect(cTokenSnapshot1.totalReserves).to.eq(reserves2);
@@ -297,7 +326,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch again!
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
       const cTokenSnapshot2 = await reserveManager.reservesSnapshot(cToken.address);
       const cTokenReserves = await cToken.totalReserves();
       expect(cTokenReserves).to.eq(toWei('1.5')); // 1 + (2 - 1) * 0.5
@@ -307,7 +336,7 @@ describe('ReserveManager', () => {
 
     it('burns more than reserves reduced amount', async () => {
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
 
       const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
       const reserves = toWei('2'); // 1 -> 2
@@ -320,7 +349,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch!
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
       const cTokenSnapshot = await reserveManager.reservesSnapshot(cToken.address);
       const cTokenReserves = await cToken.totalReserves();
       expect(cTokenReserves).to.eq(toWei('1.4')); // 1 + (2 - 1) * 0.4
@@ -331,7 +360,7 @@ describe('ReserveManager', () => {
 
     it('adjust ratio and dispatch successfully', async () => {
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
 
       const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
       const reserves = toWei('2'); // 1 -> 2
@@ -343,7 +372,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch!
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
       const cTokenSnapshot = await reserveManager.reservesSnapshot(cToken.address);
       const cTokenReserves = await cToken.totalReserves();
       expect(cTokenReserves).to.eq(toWei('1.4')); // 1 + (2 - 1) * 0.4
@@ -360,7 +389,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cOther.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cOther.address]);
       const cOtherSnapshot = await reserveManager.reservesSnapshot(cOther.address);
       const cOtherReserves = await cOther.totalReserves();
       expect(cOtherReserves).to.eq(0);
@@ -371,7 +400,7 @@ describe('ReserveManager', () => {
       await reserveManager.setBlockTimestamp(timestamp);
 
       // Nothing changed.
-      await reserveManager.dispatchMultiple([cOther.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cOther.address]);
       const cOtherSnapshot2 = await reserveManager.reservesSnapshot(cOther.address);
       const cOtherReserves2 = await cOther.totalReserves();
       expect(cOtherReserves2).to.eq(0);
@@ -384,7 +413,7 @@ describe('ReserveManager', () => {
       await reserveManager.connect(owner).setManualBurn([cToken.address], [true]);
 
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
 
       const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
       const reserves = toWei('2'); // 1 -> 2
@@ -394,7 +423,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Dispatch!
-      await reserveManager.dispatchMultiple([cToken.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cToken.address]);
       const cTokenSnapshot = await reserveManager.reservesSnapshot(cToken.address);
       const cTokenReserves = await cToken.totalReserves();
       expect(cTokenReserves).to.eq(toWei('1.5')); // 1 + (2 - 1) * 0.5
@@ -405,11 +434,11 @@ describe('ReserveManager', () => {
 
     it('failed to dispatch for market blocked from reserves sharing', async () => {
       await reserveManager.connect(owner).setBlocked([cOther.address], [true]);
-      await expect(reserveManager.dispatchMultiple([cOther.address])).to.be.revertedWith('market is blocked from reserves sharing');
+      await expect(reserveManager.connect(owner).dispatchMultiple([cOther.address])).to.be.revertedWith('market is blocked from reserves sharing');
     });
 
     it('failed to dispatch for market not listed', async () => {
-      await expect(reserveManager.dispatchMultiple([cOther.address])).to.be.revertedWith('market not listed');
+      await expect(reserveManager.connect(owner).dispatchMultiple([cOther.address])).to.be.revertedWith('market not listed');
     });
 
     it('failed to dispatch for burner not set', async () => {
@@ -420,7 +449,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cOther.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cOther.address]);
 
       const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
       const reserves = toWei('2'); // 1 -> 2
@@ -428,7 +457,7 @@ describe('ReserveManager', () => {
         reserveManager.setBlockTimestamp(timestamp),
         cOther.setTotalReserves(reserves)
       ]);
-      await expect(reserveManager.dispatchMultiple([cOther.address])).to.be.revertedWith('burner not set');
+      await expect(reserveManager.connect(owner).dispatchMultiple([cOther.address])).to.be.revertedWith('burner not set');
     });
 
     it('failed to dispatch for in the cooldown period', async () => {
@@ -440,7 +469,7 @@ describe('ReserveManager', () => {
       ]);
 
       // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cOther.address]);
+      await reserveManager.connect(owner).dispatchMultiple([cOther.address]);
 
       const timestamp = 10001; // 1 second later
       const reserves = toWei('2'); // 1 -> 2
@@ -448,28 +477,7 @@ describe('ReserveManager', () => {
         reserveManager.setBlockTimestamp(timestamp),
         cOther.setTotalReserves(reserves)
       ]);
-      await expect(reserveManager.dispatchMultiple([cOther.address])).to.be.revertedWith('still in the cooldown period');
-    });
-
-    it('failed to dispatch for burner failure', async () => {
-      await Promise.all([
-        comptroller.setmarketListed(cOther.address, true),
-        cOther.setTotalReserves(initReserves),
-        reserveManager.connect(owner).setBurners([cOther.address], [burner.address]),
-        reserveManager.setBlockTimestamp(initTimestamp),
-        burner.setBurnFailed(true)
-      ]);
-
-      // Initialize the snapshot.
-      await reserveManager.dispatchMultiple([cOther.address]);
-
-      const timestamp = 100000; // 1 day later, 100000 > 10000 + 86400
-      const reserves = toWei('2'); // 1 -> 2
-      await Promise.all([
-        reserveManager.setBlockTimestamp(timestamp),
-        cOther.setTotalReserves(reserves)
-      ]);
-      await expect(reserveManager.dispatchMultiple([cOther.address])).to.be.revertedWith('Burner failed to burn the underlying token');
+      await expect(reserveManager.connect(owner).dispatchMultiple([cOther.address])).to.be.revertedWith('still in the cooldown period');
     });
   });
 });
