@@ -10,7 +10,7 @@ require('hardhat-deploy');
 
 module.exports = {
   solidity: {
-    version: "0.8.2" ,
+    version: "0.8.11" ,
     settings: {
       optimizer: {
         enabled: true,
@@ -56,7 +56,7 @@ module.exports = {
         }
     },
     mainnet: {
-      url: `https://mainnet.infura.io/v3/${process.env.INFURA_TOKEN}`,
+      url: `https://mainnet.infura.io/v3/${process.env.WEB3_INFURA_PROJECT_ID}`,
       accounts: process.env.DEPLOY_PRIVATE_KEY == undefined ? [] : [`0x${process.env.DEPLOY_PRIVATE_KEY}`]
     },
     fantom: {
